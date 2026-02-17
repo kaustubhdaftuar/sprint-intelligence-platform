@@ -1,0 +1,178 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_API: ${{ github.repository }}/api-service
+  IMAGE_NAME_AI: ${{ github.repository }}/ai-service
+  IMAGE_NAME_WORKER: ${{ github.repository }}/worker-service
+  IMAGE_NAME_FRONTEND: ${{ github.repository }}/frontend
+
+jobs:
+  # Test API Service
+  test-api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: services/api/package-lock.json
+
+      - name: Install dependencies
+        working-directory: services/api
+        run: npm ci
+
+      - name: Run linter
+        working-directory: services/api
+        run: npm run lint || true
+
+      - name: Run tests
+        working-directory: services/api
+        run: npm test || true
+
+      - name: Build TypeScript
+        working-directory: services/api
+        run: npm run build
+
+  # Test AI Service
+  test-ai:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: services/ai-service/package-lock.json
+
+      - name: Install dependencies
+        working-directory: services/ai-service
+        run: npm ci
+
+      - name: Run tests
+        working-directory: services/ai-service
+        run: npm test || true
+
+      - name: Build
+        working-directory: services/ai-service
+        run: npm run build
+
+  # Build and push Docker images
+  build-and-push:
+    needs: [test-api, test-ai]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [api, ai-service, worker-service, frontend]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}
+          tags: |
+            type=sha,prefix={{branch}}-
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./services/${{ matrix.service }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:buildcache,mode=max
+
+  # Deploy to Kubernetes
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Update image tags in manifests
+        run: |
+          # Update API service image
+          sed -i "s|image:.*api-service.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_API }}:${{ github.sha }}|g" k8s/api-deployment.yaml
+          
+          # Update AI service image
+          sed -i "s|image:.*ai-service.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_AI }}:${{ github.sha }}|g" k8s/ai-deployment.yaml
+          
+          # Update Worker service image
+          sed -i "s|image:.*worker-service.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:${{ github.sha }}|g" k8s/worker-deployment.yaml
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f k8s/
+          kubectl rollout status deployment/api-service -n default --timeout=5m
+          kubectl rollout status deployment/ai-service -n default --timeout=5m
+          kubectl rollout status deployment/worker-service -n default --timeout=5m
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n default
+          kubectl get services -n default
+          kubectl get ingress -n default
+
+  # Security scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'

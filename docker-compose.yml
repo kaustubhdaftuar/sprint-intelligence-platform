@@ -1,0 +1,144 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: sprint-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: devpassword
+      MONGO_INITDB_DATABASE: sprint-intelligence
+    volumes:
+      - mongodb_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/sprint-intelligence --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sprint-network
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: sprint-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - sprint-network
+
+  # API Service
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: sprint-api
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      NODE_ENV: development
+      MONGO_URI: mongodb://admin:devpassword@mongodb:27017/sprint-intelligence?authSource=admin
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: local-dev-jwt-secret-change-in-production
+      JWT_EXPIRES_IN: 1h
+      JWT_REFRESH_EXPIRES_IN: 7d
+      AI_SERVICE_URL: http://ai-service:5000
+      LOG_LEVEL: debug
+      CORS_ORIGIN: http://localhost:3000
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/api/src:/app/src
+      - /app/node_modules
+    networks:
+      - sprint-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # AI Service (placeholder - implement in Phase 3)
+  # ai-service:
+  #   build:
+  #     context: ./services/ai-service
+  #     dockerfile: Dockerfile
+  #   container_name: sprint-ai
+  #   restart: unless-stopped
+  #   ports:
+  #     - "5000:5000"
+  #   environment:
+  #     PORT: 5000
+  #     NODE_ENV: development
+  #     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  #     REDIS_HOST: redis
+  #     REDIS_PORT: 6379
+  #   depends_on:
+  #     - redis
+  #   networks:
+  #     - sprint-network
+
+  # Worker Service (placeholder - implement in Phase 4)
+  # worker:
+  #   build:
+  #     context: ./services/worker-service
+  #     dockerfile: Dockerfile
+  #   container_name: sprint-worker
+  #   restart: unless-stopped
+  #   environment:
+  #     NODE_ENV: development
+  #     MONGO_URI: mongodb://admin:devpassword@mongodb:27017/sprint-intelligence?authSource=admin
+  #     REDIS_HOST: redis
+  #     REDIS_PORT: 6379
+  #     AI_SERVICE_URL: http://ai-service:5000
+  #   depends_on:
+  #     - mongodb
+  #     - redis
+  #   networks:
+  #     - sprint-network
+
+  # Frontend (placeholder - implement in Phase 5)
+  # frontend:
+  #   build:
+  #     context: ./services/frontend
+  #     dockerfile: Dockerfile
+  #   container_name: sprint-frontend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:80"
+  #   environment:
+  #     REACT_APP_API_URL: http://localhost:4000/api
+  #   depends_on:
+  #     - api
+  #   networks:
+  #     - sprint-network
+
+volumes:
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  sprint-network:
+    driver: bridge
