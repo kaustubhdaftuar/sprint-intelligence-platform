@@ -1,248 +1,362 @@
-import { Ticket, ITicket, TicketStatus, TicketPriority } from '../models/Ticket';
-import { Types } from 'mongoose';
+import { Types, ClientSession } from 'mongoose';
+import { Ticket, ITicket, ITicketDocument } from '@/models/ticket.model';
+import type { TicketStatusValue, TicketPriorityValue } from '@/models/ticket.model';
 
-export interface TicketFilters {
-  projectId?: string | Types.ObjectId;
-  sprintId?: string | Types.ObjectId;
-  status?: TicketStatus | TicketStatus[];
-  priority?: TicketPriority | TicketPriority[];
-  assignedTo?: string | Types.ObjectId;
-  isBlocked?: boolean;
-  type?: string;
+/**
+ * TicketRepository — DB access only.
+ *
+ * Key implementation details:
+ *
+ * 1. Ticket numbering uses an atomic $inc counter to avoid the
+ *    race condition in the original getNextTicketNumber static.
+ *    A separate `counters` collection holds { _id: projectId, seq: number }.
+ *
+ * 2. assignToSprint / removeFromSprint return the story point delta
+ *    so the caller (SprintService) can update capacityPoints in one
+ *    extra call without re-fetching tickets.
+ *
+ * 3. lastActivityAt is NOT updated here — it's handled by the pre-save
+ *    hook on the model, which fires on status and comment changes.
+ *    Direct updateOne/findOneAndUpdate calls bypass pre-save hooks,
+ *    so status transitions use findById + save() pattern to trigger the hook.
+ */
+
+export interface CreateTicketInput {
+  projectId: Types.ObjectId;
+  reporterId: Types.ObjectId;
+  ticketNumber: number;
+  key: string;
+  title: string;
+  description: string;
+  type: string;
+  priority: string;
+  storyPoints?: number;
+  assignedTo?: Types.ObjectId;
+  tags: string[];
+  estimatedHours?: number;
+  dueDate?: Date;
 }
 
-export interface TicketQueryOptions {
-  page?: number;
-  limit?: number;
-  sortBy?: string;
-  sortOrder?: 'asc' | 'desc';
-  populate?: string[];
+export interface UpdateTicketInput {
+  title?: string;
+  description?: string;
+  type?: string;
+  priority?: string;
+  storyPoints?: number;
+  assignedTo?: Types.ObjectId | null;
+  tags?: string[];
+  estimatedHours?: number;
+  actualHours?: number;
+  dueDate?: Date | null;
+}
+
+export interface ListTicketsFilter {
+  projectId: Types.ObjectId;
+  sprintId?: Types.ObjectId;
+  noSprint?: boolean;          // true = backlog query
+  status?: TicketStatusValue;
+  assignedTo?: Types.ObjectId;
+  priority?: TicketPriorityValue;
+  isBlocked?: boolean;
 }
 
 export class TicketRepository {
   /**
-   * Create a new ticket
+   * Get next ticket number for a project using atomic $inc.
+   * Uses a counters collection to avoid race conditions.
+   * findOneAndUpdate with upsert:true creates the counter on first use.
+   *
+   * Returns the new sequence number (already incremented).
    */
-  async create(ticketData: Partial<ITicket>): Promise<ITicket> {
-    // Get next ticket number for the project
-    const ticketNumber = await (Ticket as any).getNextTicketNumber(
-      ticketData.projectId
+  async getNextTicketNumber(projectId: Types.ObjectId): Promise<number> {
+    // Import inline to avoid circular dependency at module load time
+    const { default: mongoose } = await import('mongoose');
+    const db = mongoose.connection.db;
+
+    if (!db) throw new Error('Database connection not established');
+
+    const result = await db.collection('counters').findOneAndUpdate(
+      { _id: projectId.toString() },
+      { $inc: { seq: 1 } },
+      { upsert: true, returnDocument: 'after' },
     );
-    
-    // Assuming we fetch the project to get the key
-    const ticket = new Ticket({
-      ...ticketData,
-      ticketNumber,
-      key: `${ticketData.key || 'PROJ'}-${ticketNumber}`,
-    });
-    
-    return await ticket.save();
+
+    return (result as { seq: number } | null)?.seq ?? 1;
+  }
+
+  async create(data: CreateTicketInput): Promise<ITicketDocument> {
+    const ticket = new Ticket(data);
+    return ticket.save();
+  }
+
+  async findById(id: Types.ObjectId): Promise<ITicket | null> {
+    return Ticket.findById(id).lean().exec();
   }
 
   /**
-   * Find ticket by ID
+   * Find multiple tickets by their IDs.
+   * Used by sprint service to validate bulk assignment.
+   * Returns only found tickets — caller checks length vs input length.
    */
-  async findById(
-    id: string | Types.ObjectId,
-    populate?: string[]
-  ): Promise<ITicket | null> {
-    let query = Ticket.findById(id);
-    
-    if (populate) {
-      populate.forEach((field) => {
-        query = query.populate(field);
-      });
-    }
-    
-    return await query;
+  async findManyByIds(ids: Types.ObjectId[]): Promise<ITicket[]> {
+    return Ticket.find({ _id: { $in: ids } })
+      .lean()
+      .exec();
   }
 
   /**
-   * Find ticket by key (e.g., "PROJ-123")
+   * List tickets with flexible filtering.
+   * backlog = sprintId does not exist on document.
    */
-  async findByKey(key: string): Promise<ITicket | null> {
-    return await Ticket.findOne({ key });
-  }
-
-  /**
-   * Find tickets with filters and pagination
-   */
-  async findAll(
-    filters: TicketFilters = {},
-    options: TicketQueryOptions = {}
-  ): Promise<{ tickets: ITicket[]; total: number; page: number; pages: number }> {
-    const {
-      page = 1,
-      limit = 20,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
-      populate = [],
-    } = options;
-
-    const query: any = {};
-
-    // Build query
-    if (filters.projectId) query.projectId = filters.projectId;
-    if (filters.sprintId) query.sprintId = filters.sprintId;
-    if (filters.status) {
-      query.status = Array.isArray(filters.status)
-        ? { $in: filters.status }
-        : filters.status;
-    }
-    if (filters.priority) {
-      query.priority = Array.isArray(filters.priority)
-        ? { $in: filters.priority }
-        : filters.priority;
-    }
-    if (filters.assignedTo) query.assignedTo = filters.assignedTo;
-    if (filters.isBlocked !== undefined) query.isBlocked = filters.isBlocked;
-    if (filters.type) query.type = filters.type;
-
-    const skip = (page - 1) * limit;
-    const sortOptions: any = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
-
-    let ticketQuery = Ticket.find(query)
-      .sort(sortOptions)
+  async findMany(
+    filter: ListTicketsFilter,
+    skip: number,
+    limit: number,
+  ): Promise<ITicket[]> {
+    const query = this.buildFilter(filter);
+    return Ticket.find(query)
+      .sort({ priority: 1, createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean()
+      .exec();
+  }
 
-    if (populate.length > 0) {
-      populate.forEach((field) => {
-        ticketQuery = ticketQuery.populate(field);
-      });
-    }
-
-    const [tickets, total] = await Promise.all([
-      ticketQuery,
-      Ticket.countDocuments(query),
-    ]);
-
-    return {
-      tickets,
-      total,
-      page,
-      pages: Math.ceil(total / limit),
-    };
+  async countMany(filter: ListTicketsFilter): Promise<number> {
+    const query = this.buildFilter(filter);
+    return Ticket.countDocuments(query);
   }
 
   /**
-   * Update ticket
+   * Find all tickets in a sprint with a specific status.
+   * Called by sprint.service.completeSprint to compute actualVelocity.
+   */
+  async findBySprintAndStatus(
+    sprintId: Types.ObjectId,
+    status: TicketStatusValue,
+  ): Promise<ITicket[]> {
+    return Ticket.find({ sprintId, status })
+      .lean()
+      .exec();
+  }
+
+  /**
+   * Update ticket fields. Returns updated document.
+   * Does NOT trigger pre-save hook — do not use for status changes.
+   * For null values (unassign, remove dueDate), $unset is used.
    */
   async update(
-    id: string | Types.ObjectId,
-    updates: Partial<ITicket>
+    id: Types.ObjectId,
+    data: UpdateTicketInput,
   ): Promise<ITicket | null> {
-    return await Ticket.findByIdAndUpdate(id, updates, {
+    const setFields: Record<string, unknown> = {};
+    const unsetFields: Record<string, string> = {};
+
+    for (const [key, value] of Object.entries(data)) {
+      if (value === null) {
+        unsetFields[key] = '';
+      } else if (value !== undefined) {
+        setFields[key] = value;
+      }
+    }
+
+    const updateOp: Record<string, unknown> = {};
+    if (Object.keys(setFields).length) updateOp['$set'] = setFields;
+    if (Object.keys(unsetFields).length) updateOp['$unset'] = unsetFields;
+
+    if (!Object.keys(updateOp).length) return this.findById(id);
+
+    return Ticket.findByIdAndUpdate(id, updateOp, {
       new: true,
       runValidators: true,
+    })
+      .lean()
+      .exec();
+  }
+
+  /**
+   * Transition ticket status.
+   * Uses findById + save() to trigger the pre-save hook,
+   * which updates lastActivityAt on status change.
+   *
+   * Returns null if ticket not found.
+   */
+  async setStatus(
+    id: Types.ObjectId,
+    status: TicketStatusValue,
+  ): Promise<ITicket | null> {
+    const ticket = await Ticket.findById(id);
+    if (!ticket) return null;
+
+    ticket.status = status;
+    // pre-save hook fires here and sets lastActivityAt = new Date()
+    const saved = await ticket.save();
+    return saved.toObject() as ITicket;
+  }
+
+  /**
+   * Set isBlocked flag. Written by worker service during blocker detection.
+   * Does not change status — isBlocked is orthogonal to status.
+   */
+  async setBlocked(
+    id: Types.ObjectId,
+    isBlocked: boolean,
+    blockedReason?: string,
+  ): Promise<void> {
+    const updateOp: Record<string, unknown> = {
+      $set: { isBlocked, lastActivityAt: new Date() },
+    };
+    if (!isBlocked) {
+      (updateOp['$unset'] as Record<string, string>) = { blockedReason: '' };
+    } else if (blockedReason) {
+      (updateOp['$set'] as Record<string, unknown>)['blockedReason'] = blockedReason;
+    }
+    await Ticket.findByIdAndUpdate(id, updateOp);
+  }
+
+  /**
+   * Add a comment to a ticket.
+   * Uses $push to append to the embedded comments array.
+   * Also updates lastActivityAt (pre-save hook doesn't fire on updateOne —
+   * we set it explicitly here).
+   */
+  async addComment(
+    id: Types.ObjectId,
+    comment: { userId: Types.ObjectId; text: string },
+  ): Promise<ITicket | null> {
+    return Ticket.findByIdAndUpdate(
+      id,
+      {
+        $push: { comments: { ...comment, createdAt: new Date() } },
+        $set: { lastActivityAt: new Date() },
+      },
+      { new: true },
+    )
+      .lean()
+      .exec();
+  }
+
+  /**
+   * Assign a batch of tickets to a sprint.
+   * Returns the total story points of newly assigned tickets
+   * so the caller can update sprint.capacityPoints atomically.
+   *
+   * Only assigns tickets not already in this sprint (idempotent).
+   * Tickets already in another sprint are moved — caller should validate
+   * this is intentional (service layer responsibility).
+   */
+  async assignToSprint(
+    ticketIds: Types.ObjectId[],
+    sprintId: Types.ObjectId,
+  ): Promise<number> {
+    // Fetch before update to know current state (for point delta calculation)
+    const tickets = await Ticket.find({ _id: { $in: ticketIds } })
+      .select('storyPoints sprintId')
+      .lean()
+      .exec();
+
+    // Only count points for tickets not already in THIS sprint
+    const pointsDelta = tickets
+      .filter((t) => t.sprintId?.toString() !== sprintId.toString())
+      .reduce((sum, t) => sum + (t.storyPoints ?? 0), 0);
+
+    await Ticket.updateMany(
+      { _id: { $in: ticketIds } },
+      { $set: { sprintId, status: 'TODO' } },
+    );
+
+    return pointsDelta;
+  }
+
+  /**
+   * Remove a single ticket from a sprint (back to backlog).
+   * Returns the ticket's story points so sprint.capacityPoints
+   * can be decremented by the caller.
+   */
+  async removeFromSprint(
+    ticketId: Types.ObjectId,
+    sprintId: Types.ObjectId,
+  ): Promise<number> {
+    const ticket = await Ticket.findOne({ _id: ticketId, sprintId })
+      .select('storyPoints')
+      .lean()
+      .exec();
+
+    if (!ticket) return 0;
+
+    await Ticket.findByIdAndUpdate(ticketId, {
+      $unset: { sprintId: '' },
+      $set: { status: 'TODO' },
+    });
+
+    return ticket.storyPoints ?? 0;
+  }
+
+  /**
+   * Find tickets inactive beyond a cutoff date that are in an active sprint.
+   * Called by the worker service blocker detection sweep.
+   *
+   * Query uses the compound index: { lastActivityAt: 1, sprintId: 1 }
+   */
+  async findStaleSprintTickets(
+    cutoffDate: Date,
+    projectId?: Types.ObjectId,
+  ): Promise<ITicket[]> {
+    const filter: Record<string, unknown> = {
+      lastActivityAt: { $lt: cutoffDate },
+      sprintId: { $exists: true },
+      status: { $nin: ['DONE'] },
+      isBlocked: false, // Don't re-flag already blocked tickets
+    };
+    if (projectId) filter['projectId'] = projectId;
+
+    return Ticket.find(filter).lean().exec();
+  }
+
+  /**
+   * Set AI suggestions on a ticket.
+   * Called by AI service after generating priority suggestions.
+   */
+  async setAISuggestions(
+    id: Types.ObjectId,
+    suggestions: {
+      priority?: string;
+      estimatedHours?: number;
+      summary?: string;
+    },
+  ): Promise<void> {
+    await Ticket.findByIdAndUpdate(id, {
+      $set: { aiSuggestions: suggestions },
     });
   }
 
-  /**
-   * Delete ticket
-   */
-  async delete(id: string | Types.ObjectId): Promise<ITicket | null> {
-    return await Ticket.findByIdAndDelete(id);
+  async delete(id: Types.ObjectId): Promise<boolean> {
+    const result = await Ticket.findByIdAndDelete(id);
+    return result !== null;
   }
 
-  /**
-   * Get stale tickets (inactive for X days)
-   */
-  async findStaleTickets(
-    days: number = 7,
-    statuses: TicketStatus[] = [TicketStatus.IN_PROGRESS, TicketStatus.TODO]
-  ): Promise<ITicket[]> {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - days);
+  // ─── Private helpers ────────────────────────────────────────────────────────
 
-    return await Ticket.find({
-      status: { $in: statuses },
-      lastActivityAt: { $lt: cutoffDate },
-      isBlocked: false,
-    })
-      .populate('assignedTo', 'name email')
-      .populate('projectId', 'name key');
-  }
+  private buildFilter(
+    filter: ListTicketsFilter,
+  ): Record<string, unknown> {
+    const query: Record<string, unknown> = {
+      projectId: filter.projectId,
+    };
 
-  /**
-   * Get blocked tickets
-   */
-  async findBlockedTickets(projectId?: string | Types.ObjectId): Promise<ITicket[]> {
-    const query: any = { isBlocked: true };
-    if (projectId) query.projectId = projectId;
+    if (filter.sprintId) {
+      query['sprintId'] = filter.sprintId;
+    } else if (filter.noSprint) {
+      query['sprintId'] = { $exists: false };
+    }
 
-    return await Ticket.find(query)
-      .populate('assignedTo', 'name email')
-      .populate('projectId', 'name key');
-  }
+    if (filter.status) query['status'] = filter.status;
+    if (filter.assignedTo) query['assignedTo'] = filter.assignedTo;
+    if (filter.priority) query['priority'] = filter.priority;
+    if (filter.isBlocked !== undefined) query['isBlocked'] = filter.isBlocked;
 
-  /**
-   * Assign ticket to sprint
-   */
-  async assignToSprint(
-    ticketId: string | Types.ObjectId,
-    sprintId: string | Types.ObjectId
-  ): Promise<ITicket | null> {
-    return await Ticket.findByIdAndUpdate(
-      ticketId,
-      { sprintId, status: TicketStatus.TODO },
-      { new: true }
-    );
-  }
-
-  /**
-   * Remove ticket from sprint
-   */
-  async removeFromSprint(ticketId: string | Types.ObjectId): Promise<ITicket | null> {
-    return await Ticket.findByIdAndUpdate(
-      ticketId,
-      { $unset: { sprintId: 1 }, status: TicketStatus.BACKLOG },
-      { new: true }
-    );
-  }
-
-  /**
-   * Add comment to ticket
-   */
-  async addComment(
-    ticketId: string | Types.ObjectId,
-    comment: { userId: Types.ObjectId; text: string }
-  ): Promise<ITicket | null> {
-    return await Ticket.findByIdAndUpdate(
-      ticketId,
-      {
-        $push: { comments: { ...comment, createdAt: new Date() } },
-        lastActivityAt: new Date(),
-      },
-      { new: true }
-    );
-  }
-
-  /**
-   * Get ticket statistics for a project
-   */
-  async getProjectStats(projectId: string | Types.ObjectId) {
-    const stats = await Ticket.aggregate([
-      { $match: { projectId: new Types.ObjectId(projectId as string) } },
-      {
-        $facet: {
-          byStatus: [
-            { $group: { _id: '$status', count: { $sum: 1 } } },
-          ],
-          byPriority: [
-            { $group: { _id: '$priority', count: { $sum: 1 } } },
-          ],
-          totalStoryPoints: [
-            { $group: { _id: null, total: { $sum: '$storyPoints' } } },
-          ],
-          blocked: [
-            { $match: { isBlocked: true } },
-            { $count: 'count' },
-          ],
-        },
-      },
-    ]);
-
-    return stats[0];
+    return query;
   }
 }
+
+export const ticketRepository = new TicketRepository();

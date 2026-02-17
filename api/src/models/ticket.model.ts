@@ -1,86 +1,124 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import { Schema, model, Document, Types } from 'mongoose';
 
-export enum TicketStatus {
-  BACKLOG = 'backlog',
-  TODO = 'todo',
-  IN_PROGRESS = 'in_progress',
-  IN_REVIEW = 'in_review',
-  DONE = 'done',
-  BLOCKED = 'blocked',
-}
+/**
+ * Ticket status — UPPERCASE, matches shared.validators.ts TICKET_STATUSES.
+ *
+ * State machine: TODO → IN_PROGRESS → REVIEW → DONE
+ * BACKLOG is not a status — it's the absence of a sprintId.
+ *   A ticket with no sprintId is implicitly in the backlog.
+ *   A ticket with a sprintId starts at TODO.
+ *
+ * BLOCKED is not a status — it's the isBlocked flag (orthogonal concern).
+ *   A blocked ticket retains its current status (e.g. IN_PROGRESS + isBlocked=true).
+ *   This preserves state history and avoids the restore-on-unblock problem.
+ */
+export const TICKET_STATUS_VALUES = ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE'] as const;
+export type TicketStatusValue = typeof TICKET_STATUS_VALUES[number];
 
-export enum TicketPriority {
-  LOW = 'low',
-  MEDIUM = 'medium',
-  HIGH = 'high',
-  CRITICAL = 'critical',
-}
+/**
+ * Ticket priority — UPPERCASE, matches shared.validators.ts TICKET_PRIORITIES.
+ * aiSuggestions.priority also uses this type — AI service writes UPPERCASE values.
+ */
+export const TICKET_PRIORITY_VALUES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
+export type TicketPriorityValue = typeof TICKET_PRIORITY_VALUES[number];
 
-export enum TicketType {
-  STORY = 'story',
-  BUG = 'bug',
-  TASK = 'task',
-  EPIC = 'epic',
-}
+/**
+ * Ticket type — story/bug/task/epic.
+ * No state machine on type — it can be changed freely.
+ */
+export const TICKET_TYPE_VALUES = ['STORY', 'BUG', 'TASK', 'EPIC'] as const;
+export type TicketTypeValue = typeof TICKET_TYPE_VALUES[number];
+
+/**
+ * Valid Fibonacci story points.
+ * Enforced at both API layer (Zod) and DB layer (enum) so worker/AI
+ * service writes are also constrained.
+ */
+export const STORY_POINT_VALUES = [1, 2, 3, 5, 8, 13, 21] as const;
+export type StoryPointValue = typeof STORY_POINT_VALUES[number];
+
+// ─── Subdocument interfaces ───────────────────────────────────────────────────
 
 export interface IComment {
-  userId: mongoose.Types.ObjectId;
+  _id: Types.ObjectId;
+  userId: Types.ObjectId;
   text: string;
   createdAt: Date;
 }
 
-export interface ITicket extends Document {
-  projectId: mongoose.Types.ObjectId;
-  sprintId?: mongoose.Types.ObjectId;
-  ticketNumber: number; // Auto-incremented per project
-  key: string; // e.g., "PROJ-123"
+export interface IAISuggestions {
+  priority?: TicketPriorityValue;
+  estimatedHours?: number;
+  similarTickets?: Types.ObjectId[];
+  summary?: string;
+}
+
+// ─── Main interface ───────────────────────────────────────────────────────────
+
+/**
+ * ITicket — plain TypeScript interface.
+ * Used in service and repository signatures.
+ * Must NOT extend Document.
+ */
+export interface ITicket {
+  _id: Types.ObjectId;
+  projectId: Types.ObjectId;
+  sprintId?: Types.ObjectId;       // Undefined = backlog; set = assigned to sprint
+  ticketNumber: number;            // Auto-incremented per project (1, 2, 3...)
+  key: string;                     // e.g. "PROJ-42" — projectKey + ticketNumber
   title: string;
   description: string;
-  type: TicketType;
-  status: TicketStatus;
-  priority: TicketPriority;
-  storyPoints?: number;
-  assignedTo?: mongoose.Types.ObjectId;
-  reporterId: mongoose.Types.ObjectId;
+  type: TicketTypeValue;
+  status: TicketStatusValue;
+  priority: TicketPriorityValue;
+  storyPoints?: StoryPointValue;
+  assignedTo?: Types.ObjectId;
+  reporterId: Types.ObjectId;
   tags: string[];
   comments: IComment[];
-  attachments: string[];
   estimatedHours?: number;
   actualHours?: number;
   dueDate?: Date;
-  lastActivityAt: Date;
-  isBlocked: boolean;
+  lastActivityAt: Date;            // Updated on status change — used by blocker detection
+  isBlocked: boolean;              // Set by worker service; orthogonal to status
   blockedReason?: string;
-  aiSuggestions?: {
-    priority?: TicketPriority;
-    estimatedHours?: number;
-    similarTickets?: mongoose.Types.ObjectId[];
-    summary?: string;
-  };
+  aiSuggestions?: IAISuggestions;  // Written by AI service asynchronously
   createdAt: Date;
   updatedAt: Date;
 }
 
-const commentSchema = new Schema<IComment>(
+/**
+ * ITicketDocument — Mongoose Document type.
+ * Used ONLY in model file and repository layer.
+ */
+export interface ITicketDocument extends ITicket, Document {
+  _id: Types.ObjectId;
+}
+
+// ─── Subschemas ───────────────────────────────────────────────────────────────
+
+const CommentSchema = new Schema<IComment>(
   {
-    userId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    text: {
-      type: String,
-      required: true,
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    text: { type: String, required: true, trim: true, maxlength: 2000 },
+    createdAt: { type: Date, default: Date.now },
   },
-  { _id: true }
+  { _id: true },
 );
 
-const ticketSchema = new Schema<ITicket>(
+const AISuggestionsSchema = new Schema<IAISuggestions>(
+  {
+    priority: { type: String, enum: TICKET_PRIORITY_VALUES },
+    estimatedHours: { type: Number, min: 0 },
+    similarTickets: [{ type: Schema.Types.ObjectId, ref: 'Ticket' }],
+    summary: { type: String, maxlength: 1000 },
+  },
+  { _id: false },
+);
+
+// ─── Main Schema ──────────────────────────────────────────────────────────────
+
+const TicketSchema = new Schema<ITicketDocument>(
   {
     projectId: {
       type: Schema.Types.ObjectId,
@@ -90,6 +128,7 @@ const ticketSchema = new Schema<ITicket>(
     sprintId: {
       type: Schema.Types.ObjectId,
       ref: 'Sprint',
+      default: undefined,   // Explicit undefined = backlog
     },
     ticketNumber: {
       type: Number,
@@ -98,57 +137,60 @@ const ticketSchema = new Schema<ITicket>(
     key: {
       type: String,
       required: true,
-      unique: true,
+      uppercase: true,
+      trim: true,
     },
     title: {
       type: String,
       required: true,
       trim: true,
+      maxlength: 250,
     },
     description: {
       type: String,
       default: '',
+      maxlength: 10000,
     },
     type: {
       type: String,
-      enum: Object.values(TicketType),
-      default: TicketType.TASK,
+      enum: TICKET_TYPE_VALUES,
+      default: 'TASK',
     },
     status: {
       type: String,
-      enum: Object.values(TicketStatus),
-      default: TicketStatus.BACKLOG,
+      enum: TICKET_STATUS_VALUES,
+      default: 'TODO',
     },
     priority: {
       type: String,
-      enum: Object.values(TicketPriority),
-      default: TicketPriority.MEDIUM,
+      enum: TICKET_PRIORITY_VALUES,
+      default: 'MEDIUM',
     },
     storyPoints: {
       type: Number,
-      min: 0,
+      enum: STORY_POINT_VALUES,   // DB-level Fibonacci enforcement
     },
     assignedTo: {
       type: Schema.Types.ObjectId,
       ref: 'User',
+      default: undefined,
     },
     reporterId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
     },
-    tags: [{ type: String }],
-    comments: [commentSchema],
-    attachments: [{ type: String }],
-    estimatedHours: {
-      type: Number,
-      min: 0,
+    tags: {
+      type: [String],
+      default: [],
     },
-    actualHours: {
-      type: Number,
-      min: 0,
+    comments: {
+      type: [CommentSchema],
+      default: [],
     },
-    dueDate: Date,
+    estimatedHours: { type: Number, min: 0 },
+    actualHours: { type: Number, min: 0 },
+    dueDate: { type: Date },
     lastActivityAt: {
       type: Date,
       default: Date.now,
@@ -156,50 +198,72 @@ const ticketSchema = new Schema<ITicket>(
     isBlocked: {
       type: Boolean,
       default: false,
+      index: true,              // Worker queries: all blocked tickets in a project
     },
-    blockedReason: String,
+    blockedReason: {
+      type: String,
+      maxlength: 500,
+    },
     aiSuggestions: {
-      priority: {
-        type: String,
-        enum: Object.values(TicketPriority),
-      },
-      estimatedHours: Number,
-      similarTickets: [{ type: Schema.Types.ObjectId, ref: 'Ticket' }],
-      summary: String,
+      type: AISuggestionsSchema,
     },
   },
   {
     timestamps: true,
-  }
+    versionKey: false,
+    toJSON: {
+      transform: (_doc, ret) => {
+        ret.id = ret._id.toString();
+        delete ret._id;
+      },
+    },
+  },
 );
 
-// Compound indexes for efficient queries
-ticketSchema.index({ projectId: 1, ticketNumber: 1 }, { unique: true });
-ticketSchema.index({ key: 1 }, { unique: true });
-ticketSchema.index({ projectId: 1, status: 1 });
-ticketSchema.index({ sprintId: 1, status: 1 });
-ticketSchema.index({ assignedTo: 1, status: 1 });
-ticketSchema.index({ lastActivityAt: 1 });
-ticketSchema.index({ isBlocked: 1 });
-ticketSchema.index({ priority: 1, status: 1 });
+// ─── Indexes ──────────────────────────────────────────────────────────────────
 
-// Update lastActivityAt on save
-ticketSchema.pre('save', function (next) {
+// Unique ticket number per project
+TicketSchema.index({ projectId: 1, ticketNumber: 1 }, { unique: true });
+
+// Unique key globally (e.g. "PROJ-42")
+TicketSchema.index({ key: 1 }, { unique: true });
+
+// Primary query patterns
+TicketSchema.index({ projectId: 1, status: 1 });
+TicketSchema.index({ sprintId: 1, status: 1 });
+TicketSchema.index({ assignedTo: 1, status: 1 });
+
+/**
+ * Blocker detection query — worker sweeps tickets inactive for > N days.
+ * Query shape: { lastActivityAt: { $lt: cutoffDate }, sprintId: { $exists: true } }
+ * This index makes that sweep efficient.
+ */
+TicketSchema.index({ lastActivityAt: 1, sprintId: 1 });
+
+// ─── Pre-save hooks ───────────────────────────────────────────────────────────
+
+/**
+ * Update lastActivityAt when status or comments change.
+ * The worker service uses this field to detect stale/blocked tickets.
+ * Do not update on every save — only on meaningful activity changes.
+ */
+TicketSchema.pre('save', function (next) {
   if (this.isModified('status') || this.isModified('comments')) {
     this.lastActivityAt = new Date();
   }
   next();
 });
 
-// Static method to get next ticket number for a project
-ticketSchema.statics.getNextTicketNumber = async function (
-  projectId: mongoose.Types.ObjectId
-): Promise<number> {
-  const lastTicket = await this.findOne({ projectId })
-    .sort({ ticketNumber: -1 })
-    .select('ticketNumber');
-  
-  return lastTicket ? lastTicket.ticketNumber + 1 : 1;
-};
+/**
+ * Note on ticketNumber generation:
+ * getNextTicketNumber as a static with findOne().sort() has a race condition —
+ * two concurrent creates read the same last number and collide.
+ * The unique index { projectId, ticketNumber } will catch the collision,
+ * but the caller gets a raw MongoServerError instead of a clean retry.
+ *
+ * Production fix: use a separate `counters` collection with $inc (atomic).
+ * Implemented in ticket.repository.ts using findOneAndUpdate + $inc.
+ * Do not implement ticket numbering logic in this model file.
+ */
 
-export const Ticket = mongoose.model<ITicket>('Ticket', ticketSchema);
+export const Ticket = model<ITicketDocument>('Ticket', TicketSchema);

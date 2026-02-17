@@ -30,6 +30,9 @@ const EnvSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
 
+  // CORS — required in production, optional in dev (defaults to allow all)
+  CORS_ORIGIN: z.string().default('*'),
+
   // Logging
   LOG_LEVEL: z
     .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])
@@ -54,7 +57,7 @@ const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
   // Log human-readable field errors before exiting
   const formatted = parsed.error.issues
-    .map((issue: { path: any[]; message: any; }) => `  [${issue.path.join('.')}] ${issue.message}`)
+    .map((issue) => `  [${issue.path.join('.')}] ${issue.message}`)
     .join('\n');
 
   // Use console.error here intentionally — logger depends on env, so it
