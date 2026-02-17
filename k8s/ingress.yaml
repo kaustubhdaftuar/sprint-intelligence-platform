@@ -1,102 +1,72 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: networking.k8s.io/v1
+kind: Ingress
 metadata:
-  name: redis
-  labels:
-    app: redis
+  name: sprint-platform-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/limit-rps: "10"
 spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: redis
-  template:
-    metadata:
-      labels:
-        app: redis
-    spec:
-      containers:
-      - name: redis
-        image: redis:7-alpine
-        ports:
-        - containerPort: 6379
-          name: redis
-        command:
-        - redis-server
-        - --appendonly
-        - "yes"
-        - --requirepass
-        - "$(REDIS_PASSWORD)"
-        env:
-        - name: REDIS_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: redis-secret
-              key: password
-        volumeMounts:
-        - name: redis-data
-          mountPath: /data
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
-            cpu: "200m"
-        livenessProbe:
-          exec:
-            command:
-            - redis-cli
-            - -a
-            - "$(REDIS_PASSWORD)"
-            - ping
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          exec:
-            command:
-            - redis-cli
-            - -a
-            - "$(REDIS_PASSWORD)"
-            - ping
-          initialDelaySeconds: 5
-          periodSeconds: 5
-      volumes:
-      - name: redis-data
-        persistentVolumeClaim:
-          claimName: redis-pvc
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - sprint-platform.example.com
+    secretName: sprint-platform-tls
+  rules:
+  - host: sprint-platform.example.com
+    http:
+      paths:
+      # Frontend routes
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 80
+      # API routes
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: api-service
+            port:
+              number: 4000
+      # AI Service routes (internal only - optional exposure)
+      - path: /ai
+        pathType: Prefix
+        backend:
+          service:
+            name: ai-service
+            port:
+              number: 5000
 ---
-apiVersion: v1
-kind: Service
+# Local development ingress (for minikube/kind)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
 metadata:
-  name: redis-service
-  labels:
-    app: redis
+  name: sprint-platform-local
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
-  type: ClusterIP
-  ports:
-  - port: 6379
-    targetPort: 6379
-    protocol: TCP
-    name: redis
-  selector:
-    app: redis
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: redis-pvc
-spec:
-  accessModes:
-  - ReadWriteOnce
-  storageClassName: standard
-  resources:
-    requests:
-      storage: 2Gi
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: redis-secret
-type: Opaque
-stringData:
-  password: redis-password-change-me
+  ingressClassName: nginx
+  rules:
+  - host: sprint-platform.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: api-service
+            port:
+              number: 4000

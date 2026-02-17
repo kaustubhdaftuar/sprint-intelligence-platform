@@ -44,7 +44,7 @@ services:
   # API Service
   api:
     build:
-      context: ./services/api
+      context: ./api
       dockerfile: Dockerfile
     container_name: sprint-api
     restart: unless-stopped
@@ -68,7 +68,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./services/api/src:/app/src
+      - ./api/src:/app/src
       - /app/node_modules
     networks:
       - sprint-network

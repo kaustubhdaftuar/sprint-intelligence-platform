@@ -2,142 +2,45 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: api-service
-  labels:
-    app: api-service
-    tier: backend
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: api-service
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: api-service
-        tier: backend
     spec:
       containers:
-      - name: api-service
-        image: your-registry/api-service:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 4000
-          name: http
-        env:
-        - name: PORT
-          value: "4000"
-        - name: NODE_ENV
-          value: "production"
-        - name: MONGO_URI
-          valueFrom:
-            secretKeyRef:
-              name: mongodb-secret
-              key: uri
-        - name: REDIS_HOST
-          value: redis-service
-        - name: REDIS_PORT
-          value: "6379"
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: jwt-secret
-              key: secret
-        - name: AI_SERVICE_URL
-          value: "http://ai-service:5000"
-        - name: LOG_LEVEL
-          value: "info"
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "200m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /health/live
-            port: 4000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health/ready
-            port: 4000
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
-        startupProbe:
-          httpGet:
-            path: /health/startup
-            port: 4000
-          initialDelaySeconds: 0
-          periodSeconds: 10
-          timeoutSeconds: 3
-          failureThreshold: 30
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: api-service
-  labels:
-    app: api-service
-spec:
-  type: ClusterIP
-  selector:
-    app: api-service
-  ports:
-  - port: 4000
-    targetPort: 4000
-    protocol: TCP
-    name: http
-  sessionAffinity: None
----
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: api-service-hpa
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: api-service
-  minReplicas: 3
-  maxReplicas: 10
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 70
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
-  behavior:
-    scaleDown:
-      stabilizationWindowSeconds: 300
-      policies:
-      - type: Percent
-        value: 50
-        periodSeconds: 60
-    scaleUp:
-      stabilizationWindowSeconds: 0
-      policies:
-      - type: Percent
-        value: 100
-        periodSeconds: 15
-      - type: Pods
-        value: 2
-        periodSeconds: 15
-      selectPolicy: Max
+        - name: api-service
+          image: sprint-api:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 4000
+          env:
+            - name: PORT
+              value: "4000"
+            - name: NODE_ENV
+              value: "production"
+            - name: MONGO_URI
+              value: "mongodb://admin:changeme-in-production@mongodb-service:27017/sprint-intelligence?authSource=admin"
+            - name: JWT_SECRET
+              value: "super-secret-key"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 4000
+            initialDelaySeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 4000
+            initialDelaySeconds: 10

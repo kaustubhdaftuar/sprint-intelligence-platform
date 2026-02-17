@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions, JwtPayload } from 'jsonwebtoken';
 import config from '../config/config';
 import { UserRole } from '../models/User';
 
@@ -19,25 +19,43 @@ export class JWTUtils {
   /**
    * Generate access token (short-lived)
    */
-  static generateAccessToken(payload: Omit<JWTPayload, 'iat' | 'exp'>): string {
-    return jwt.sign(payload, config.jwtSecret, {
-      expiresIn: config.jwtExpiresIn,
-    });
+  static generateAccessToken(
+    payload: Omit<JWTPayload, 'iat' | 'exp'>
+  ): string {
+    const options: SignOptions = {
+      expiresIn: config.jwtExpiresIn as SignOptions['expiresIn'],
+    };
+
+    return jwt.sign(
+      payload,
+      config.jwtSecret as string,
+      options
+    );
   }
 
   /**
    * Generate refresh token (long-lived)
    */
-  static generateRefreshToken(payload: Omit<JWTPayload, 'iat' | 'exp'>): string {
-    return jwt.sign(payload, config.jwtSecret, {
-      expiresIn: config.jwtRefreshExpiresIn,
-    });
+  static generateRefreshToken(
+    payload: Omit<JWTPayload, 'iat' | 'exp'>
+  ): string {
+    const options: SignOptions = {
+      expiresIn: config.jwtRefreshExpiresIn as SignOptions['expiresIn'],
+    };
+
+    return jwt.sign(
+      payload,
+      config.jwtSecret as string,
+      options
+    );
   }
 
   /**
    * Generate both access and refresh tokens
    */
-  static generateTokenPair(payload: Omit<JWTPayload, 'iat' | 'exp'>): TokenPair {
+  static generateTokenPair(
+    payload: Omit<JWTPayload, 'iat' | 'exp'>
+  ): TokenPair {
     return {
       accessToken: this.generateAccessToken(payload),
       refreshToken: this.generateRefreshToken(payload),
@@ -49,14 +67,21 @@ export class JWTUtils {
    */
   static verifyToken(token: string): JWTPayload {
     try {
-      return jwt.verify(token, config.jwtSecret) as JWTPayload;
+      const decoded = jwt.verify(
+        token,
+        config.jwtSecret as string
+      ) as JwtPayload;
+
+      return decoded as JWTPayload;
     } catch (error) {
       if (error instanceof jwt.TokenExpiredError) {
         throw new Error('Token has expired');
       }
+
       if (error instanceof jwt.JsonWebTokenError) {
         throw new Error('Invalid token');
       }
+
       throw new Error('Token verification failed');
     }
   }
@@ -75,6 +100,7 @@ export class JWTUtils {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return null;
     }
+
     return authHeader.substring(7);
   }
 }
