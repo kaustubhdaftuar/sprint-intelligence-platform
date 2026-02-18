@@ -9,7 +9,6 @@ import {
   ConflictError,
 } from '@/errors/app.errors';
 import type { UserRole } from '@/types/auth.types';
-import type { PaginationQuery } from '@/validators/shared.validators';
 import type { SprintStatusValue } from '@/models/sprint.model';
 import type {
   CreateSprintBody,
@@ -392,7 +391,7 @@ export class SprintService {
     if (!project) throw new NotFoundError('Project', projectId);
 
     const isMember = project.memberIds.some(
-      (id) => id.toString() === callerId,
+      (id: Types.ObjectId) => id.toString() === callerId,
     );
 
     if (!isMember) {

@@ -51,17 +51,20 @@ services:
     ports:
       - "4000:4000"
     environment:
-      PORT: 4000
       NODE_ENV: development
-      MONGO_URI: mongodb://admin:devpassword@mongodb:27017/sprint-intelligence?authSource=admin
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      JWT_SECRET: local-dev-jwt-secret-change-in-production
-      JWT_EXPIRES_IN: 1h
+      PORT: 4000
+      MONGODB_URI: mongodb://admin:devpassword@mongodb:27017/sprint-intelligence?authSource=admin
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: local-dev-jwt-access-secret-change-in-production-min-32-chars
+      JWT_REFRESH_SECRET: local-dev-jwt-refresh-secret-change-in-production-min-32-chars
+      JWT_ACCESS_EXPIRES_IN: 15m
       JWT_REFRESH_EXPIRES_IN: 7d
-      AI_SERVICE_URL: http://ai-service:5000
-      LOG_LEVEL: debug
       CORS_ORIGIN: http://localhost:3000
+      LOG_LEVEL: debug
+      API_PREFIX: /api/v1
+      CORRELATION_ID_HEADER: x-correlation-id
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX_REQUESTS: 100
     depends_on:
       mongodb:
         condition: service_healthy
@@ -73,7 +76,7 @@ services:
     networks:
       - sprint-network
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health/live"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
