@@ -214,7 +214,7 @@ const TicketSchema = new Schema<ITicketDocument>(
     toJSON: {
       transform: (_doc, ret) => {
         ret.id = ret._id.toString();
-        delete ret._id;
+        delete (ret as any)._id;
       },
     },
   },

@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { AuthService } from '../services/auth.service';
 import { asyncHandler } from '../middleware/errorHandler';
 import Joi from 'joi';
-import { UserRole } from '../models/User';
+import { UserRole } from '../models/user.model';
 
 export class AuthController {
   private authService: AuthService;
@@ -102,7 +102,7 @@ export class AuthController {
    * GET /api/auth/me
    */
   getProfile = asyncHandler(async (req: Request, res: Response) => {
-    const user = await this.authService.getProfile(req.user!.userId);
+    const user = await this.authService.getProfile(req._user!.id);
 
     res.status(200).json({
       success: true,
@@ -129,7 +129,7 @@ export class AuthController {
       return;
     }
 
-    const user = await this.authService.updateProfile(req.user!.userId, value);
+    const user = await this.authService.updateProfile(req._user!.id, value);
 
     res.status(200).json({
       success: true,
@@ -158,7 +158,7 @@ export class AuthController {
     }
 
     await this.authService.changePassword(
-      req.user!.userId,
+      req._user!.id,
       value.currentPassword,
       value.newPassword
     );

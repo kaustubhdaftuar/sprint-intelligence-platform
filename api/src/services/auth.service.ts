@@ -1,8 +1,8 @@
 import { UserRepository } from '../repositories/user.repository';
-import { UserRole } from '../models/User';
+import { UserRole } from '../models/user.model';
 import { JWTUtils, TokenPair } from '../utils/jwt';
 import { AppError } from '../middleware/errorHandler';
-import logger from '../config/logger';
+import logger from '../utils/logger';
 
 export class AuthService {
   private userRepository: UserRepository;
@@ -30,11 +30,11 @@ export class AuthService {
     const user = await this.userRepository.create(userData);
 
     // Generate tokens
-    const tokens = JWTUtils.generateTokenPair({
-      userId: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    });
+    const tokens = JWTUtils.generateTokenPair(
+       user._id.toString(),
+       user.role
+    );
+
 
     logger.info(`New user registered: ${user.email}`);
 
@@ -69,11 +69,11 @@ export class AuthService {
     }
 
     // Generate tokens
-    const tokens = JWTUtils.generateTokenPair({
-      userId: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    });
+    const tokens = JWTUtils.generateTokenPair(
+      user._id.toString(),
+      user.role
+    );
+
 
     logger.info(`User logged in: ${user.email}`);
 
@@ -89,20 +89,20 @@ export class AuthService {
   async refreshToken(refreshToken: string): Promise<TokenPair> {
     try {
       // Verify refresh token
-      const payload = JWTUtils.verifyToken(refreshToken);
+      const payload = JWTUtils.verifyRefreshToken(refreshToken);
 
       // Verify user still exists
-      const user = await this.userRepository.findById(payload.userId);
+      const user = await this.userRepository.findById(payload.sub);
       if (!user || !user.isActive) {
         throw new AppError('User not found or inactive', 401);
       }
 
       // Generate new token pair
-      const tokens = JWTUtils.generateTokenPair({
-        userId: user._id.toString(),
-        email: user.email,
-        role: user.role,
-      });
+      const tokens = JWTUtils.generateTokenPair(
+       user._id.toString(),
+       user.role
+      );
+
 
       return tokens;
     } catch (error: any) {

@@ -1,19 +1,20 @@
 import { Request, Response, NextFunction } from 'express';
-import { JWTUtils, JWTPayload } from '../utils/jwt';
-import { User, UserRole } from '../models/User';
-import logger from '../config/logger';
+import { JWTUtils } from '../utils/jwt';
+import { User } from '../models/user.model';
+import logger from '../utils/logger';
+import type { UserRole, JwtAccessPayload, AuthenticatedUser } from '@/types/auth.types';
 
 // Extend Express Request to include user
 declare global {
   namespace Express {
     interface Request {
-      user?: JWTPayload;
+      user?: JwtAccessPayload;
     }
   }
 }
 
 /**
- * Middleware to authenticate requests using JWT
+ * Authenticate using access token
  */
 export const authenticate = async (
   req: Request,
@@ -21,7 +22,6 @@ export const authenticate = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    // Extract token from header
     const token = JWTUtils.extractTokenFromHeader(req.headers.authorization);
 
     if (!token) {
@@ -32,11 +32,12 @@ export const authenticate = async (
       return;
     }
 
-    // Verify token
-    const payload = JWTUtils.verifyToken(token);
+    // Use verifyAccessToken (not verifyToken if you want strictness)
+    const payload = JWTUtils.verifyAccessToken(token);
 
-    // Optional: Verify user still exists and is active
-    const user = await User.findById(payload.userId).select('isActive');
+    // payload.sub is userId
+    const user = await User.findById(payload.sub).select('isActive');
+
     if (!user || !user.isActive) {
       res.status(401).json({
         success: false,
@@ -45,20 +46,22 @@ export const authenticate = async (
       return;
     }
 
-    // Attach user payload to request
     req.user = payload;
     next();
-  } catch (error: any) {
-    logger.error('Authentication error:', error);
+  } catch (error) {
+    const err = error as Error;
+
+    logger.error({ err }, 'Authentication error');
+
     res.status(401).json({
       success: false,
-      message: error.message || 'Invalid or expired token',
+      message: err.message || 'Invalid or expired token',
     });
   }
 };
 
 /**
- * Middleware to authorize based on user roles
+ * Role-based authorization
  */
 export const authorize = (...allowedRoles: UserRole[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
@@ -72,8 +75,13 @@ export const authorize = (...allowedRoles: UserRole[]) => {
 
     if (!allowedRoles.includes(req.user.role)) {
       logger.warn(
-        `Unauthorized access attempt by user ${req.user.userId} with role ${req.user.role}`
+        {
+          userId: req.user.sub,
+          role: req.user.role,
+        },
+        'Unauthorized access attempt'
       );
+
       res.status(403).json({
         success: false,
         message: 'Insufficient permissions',
@@ -86,7 +94,7 @@ export const authorize = (...allowedRoles: UserRole[]) => {
 };
 
 /**
- * Optional authentication - doesn't fail if no token provided
+ * Optional authentication
  */
 export const optionalAuthenticate = async (
   req: Request,
@@ -97,13 +105,12 @@ export const optionalAuthenticate = async (
     const token = JWTUtils.extractTokenFromHeader(req.headers.authorization);
 
     if (token) {
-      const payload = JWTUtils.verifyToken(token);
+      const payload = JWTUtils.verifyAccessToken(token);
       req.user = payload;
     }
 
     next();
-  } catch (error) {
-    // Silently continue without authentication
+  } catch {
     next();
   }
 };

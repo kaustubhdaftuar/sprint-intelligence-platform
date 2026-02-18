@@ -1,6 +1,8 @@
 import { Types, ClientSession } from 'mongoose';
 import { Ticket, ITicket, ITicketDocument } from '@/models/ticket.model';
 import type { TicketStatusValue, TicketPriorityValue } from '@/models/ticket.model';
+import { ObjectId } from 'mongodb';
+
 
 /**
  * TicketRepository — DB access only.
@@ -69,20 +71,24 @@ export class TicketRepository {
    * Returns the new sequence number (already incremented).
    */
   async getNextTicketNumber(projectId: Types.ObjectId): Promise<number> {
-    // Import inline to avoid circular dependency at module load time
-    const { default: mongoose } = await import('mongoose');
-    const db = mongoose.connection.db;
+  const { default: mongoose } = await import('mongoose');
+  const db = mongoose.connection.db;
 
-    if (!db) throw new Error('Database connection not established');
+  if (!db) throw new Error('Database connection not established');
 
-    const result = await db.collection('counters').findOneAndUpdate(
-      { _id: projectId.toString() },
-      { $inc: { seq: 1 } },
-      { upsert: true, returnDocument: 'after' },
-    );
+  const result = await db.collection('counters').findOneAndUpdate(
+    { _id: new ObjectId(projectId.toString()) },
+    { $inc: { seq: 1 } },
+    { upsert: true, returnDocument: 'after' }
+  );
 
-    return (result as { seq: number } | null)?.seq ?? 1;
+  if (!result || !result.value) {
+    return 1;
   }
+
+  return (result.value as { seq: number }).seq;
+}
+
 
   async create(data: CreateTicketInput): Promise<ITicketDocument> {
     const ticket = new Ticket(data);

@@ -6,7 +6,7 @@
  * mapping, const enum issues with isolatedModules, etc.).
  */
 
-export type UserRole = 'admin' | 'manager' | 'developer';
+export type UserRole = 'admin' | 'manager' | 'developer' | 'user';
 
 export const USER_ROLES: readonly UserRole[] = ['admin', 'manager', 'developer'] as const;
 

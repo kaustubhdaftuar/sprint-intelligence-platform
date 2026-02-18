@@ -20,7 +20,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.createSprint(
-        req.user!.id,
+        req._user!.id,
         req.user!.role,
         req.params.projectId,
         req.body,
@@ -32,21 +32,23 @@ export const SprintController = {
   },
 
   list: async (
-    req: Request<{ projectId: string }, {}, {}, ListSprintsQuery>,
-    res: Response,
-    next: NextFunction,
-  ): Promise<void> => {
-    try {
-      const result = await sprintService.listSprints(
-        req.user!.id,
-        req.params.projectId,
-        req.query,
-      );
-      res.status(200).json({ success: true, data: result });
-    } catch (err) {
-      next(err);
-    }
-  },
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const result = await sprintService.listSprints(
+      req._user!.id,
+      req.params.projectId,
+      req.query as unknown as ListSprintsQuery, // ← cast here instead
+    );
+
+    res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+},
+
 
   getById: async (
     req: Request<{ projectId: string; sprintId: string }>,
@@ -55,7 +57,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.getSprint(
-        req.user!.id,
+        req._user!.id,
         req.params.sprintId,
       );
       res.status(200).json({ success: true, data: sprint });
@@ -71,7 +73,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.updateSprint(
-        req.user!.id,
+        req._user!.id,
         req.user!.role,
         req.params.sprintId,
         req.body,
@@ -89,7 +91,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.startSprint(
-        req.user!.id,
+        req._user!.id,
         req.user!.role,
         req.params.sprintId,
       );
@@ -106,7 +108,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.completeSprint(
-        req.user!.id,
+        req._user!.id,
         req.user!.role,
         req.params.sprintId,
       );
@@ -123,7 +125,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.assignTickets(
-        req.user!.id,
+        req._user!.id,
         req.params.sprintId,
         req.body,
       );
@@ -140,7 +142,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.removeTicketFromSprint(
-        req.user!.id,
+        req._user!.id,
         req.params.sprintId,
         req.params.ticketId,
       );

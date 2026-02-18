@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import logger from '../config/logger';
-import config from '../config/config';
+import logger from '../utils/logger';
 
 export class AppError extends Error {
   statusCode: number;
@@ -24,6 +23,8 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ): void => {
+  const error = err as Error; // ✅ correct placement
+
   let statusCode = 500;
   let message = 'Internal server error';
   let isOperational = false;
@@ -46,33 +47,41 @@ export const errorHandler = (
     isOperational = true;
   }
 
-  // Log error
+  // Log error (Pino expects object first)
   if (!isOperational || statusCode >= 500) {
-    logger.error('Error:', {
-      message: err.message,
-      stack: err.stack,
-      statusCode,
-      path: req.path,
-      method: req.method,
-    });
+    logger.error(
+      {
+        message: error.message,
+        stack: error.stack,
+        statusCode,
+        path: req.path,
+        method: req.method,
+      },
+      'Error'
+    );
   } else {
-    logger.warn('Operational error:', {
-      message: err.message,
-      statusCode,
-      path: req.path,
-    });
+    logger.warn(
+      {
+        message: error.message,
+        statusCode,
+        path: req.path,
+      },
+      'Operational error'
+    );
   }
 
   // Send response
   res.status(statusCode).json({
     success: false,
     message,
-    ...(config.nodeEnv === 'development' && { stack: err.stack }),
+    ...(process.env.NODE_ENV === 'development' && {
+      stack: error.stack,
+    }),
   });
 };
 
 /**
- * Async handler wrapper to catch errors in async route handlers
+ * Async handler wrapper
  */
 export const asyncHandler = (
   fn: (req: Request, res: Response, next: NextFunction) => Promise<any>
@@ -83,7 +92,7 @@ export const asyncHandler = (
 };
 
 /**
- * 404 Not Found handler
+ * 404 handler
  */
 export const notFoundHandler = (
   req: Request,

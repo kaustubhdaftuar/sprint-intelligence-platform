@@ -23,10 +23,14 @@ spec:
               value: "4000"
             - name: NODE_ENV
               value: "production"
-            - name: MONGO_URI
+            - name: MONGODB_URI
               value: "mongodb://admin:changeme-in-production@mongodb-service:27017/sprint-intelligence?authSource=admin"
-            - name: JWT_SECRET
-              value: "super-secret-key"
+            - name: REDIS_URL
+              value: "redis://:redis-password-change-me@redis-service:6379"
+            - name: JWT_ACCESS_SECRET
+              value: "this_is_a_super_long_access_secret_key_123456789y"
+            - name: JWT_REFRESH_SECRET
+              value: "this_is_a_super_long_refresh_secret_key_987654321"
           resources:
             requests:
               memory: "256Mi"
@@ -36,11 +40,13 @@ spec:
               cpu: "500m"
           livenessProbe:
             httpGet:
-              path: /health/live
+              path: /health
               port: 4000
             initialDelaySeconds: 30
+            periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: /health/ready
+              path: /ready
               port: 4000
             initialDelaySeconds: 10
+            periodSeconds: 5

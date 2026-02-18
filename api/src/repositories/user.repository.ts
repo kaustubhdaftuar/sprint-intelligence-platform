@@ -1,4 +1,4 @@
-import { User, IUser, UserRole } from '../models/User';
+import { User, IUser, UserRole } from '../models/user.model';
 import { Types } from 'mongoose';
 
 export class UserRepository {

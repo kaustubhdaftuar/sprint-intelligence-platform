@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import dotenv from 'dotenv'
+dotenv.config()
+
 
 /**
  * All environment variables are validated here at process startup.

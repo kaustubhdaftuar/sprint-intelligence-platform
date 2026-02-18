@@ -165,9 +165,11 @@ export class TicketService {
       type: dto.type,
       priority: dto.priority,
       storyPoints: dto.storyPoints,
-      assignedTo: dto.assignedTo
-        ? new Types.ObjectId(dto.assignedTo)
-        : dto.assignedTo, // null = unassign, undefined = no change
+      assignedTo: dto.assignedTo === null
+        ? null
+        : dto.assignedTo
+         ? new Types.ObjectId(dto.assignedTo)
+         : undefined,
       tags: dto.tags,
       estimatedHours: dto.estimatedHours,
       actualHours: dto.actualHours,
@@ -350,7 +352,7 @@ export class TicketService {
     if (!project) throw new NotFoundError('Project', projectId);
 
     const isMember = project.memberIds.some(
-      (id) => id.toString() === callerId,
+      (id: Types.ObjectId) => id.toString() === callerId,
     );
     if (!isMember) throw new NotFoundError('Project', projectId);
   }

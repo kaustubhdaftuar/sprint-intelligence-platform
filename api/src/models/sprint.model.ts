@@ -133,7 +133,7 @@ const SprintSchema = new Schema<ISprintDocument>(
     toJSON: {
       transform: (_doc, ret) => {
         ret.id = ret._id.toString();
-        delete ret._id;
+        delete (ret as any)._id;
       },
     },
   },

@@ -20,7 +20,7 @@ export const TicketController = {
   ): Promise<void> => {
     try {
       const ticket = await ticketService.createTicket(
-        req.user!.id,
+        req._user!.id,
         req.params.projectId,
         req.body,
       );
@@ -31,21 +31,24 @@ export const TicketController = {
   },
 
   list: async (
-    req: Request<{ projectId: string }, {}, {}, ListTicketsQuery>,
-    res: Response,
-    next: NextFunction,
-  ): Promise<void> => {
-    try {
-      const result = await ticketService.listTickets(
-        req.user!.id,
-        req.params.projectId,
-        req.query,
-      );
-      res.status(200).json({ success: true, data: result });
-    } catch (err) {
-      next(err);
-    }
-  },
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    const result = await ticketService.listTickets(
+      req._user!.id,
+      req.params.projectId,
+      req.query as unknown as ListTicketsQuery,
+    );
+
+    res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+
+
+},
 
   getById: async (
     req: Request<{ projectId: string; id: string }>,
@@ -54,7 +57,7 @@ export const TicketController = {
   ): Promise<void> => {
     try {
       const ticket = await ticketService.getTicket(
-        req.user!.id,
+        req._user!.id,
         req.params.id,
       );
       res.status(200).json({ success: true, data: ticket });
@@ -70,7 +73,7 @@ export const TicketController = {
   ): Promise<void> => {
     try {
       const ticket = await ticketService.updateTicket(
-        req.user!.id,
+        req._user!.id,
         req.params.id,
         req.body,
       );
@@ -87,7 +90,7 @@ export const TicketController = {
   ): Promise<void> => {
     try {
       const ticket = await ticketService.transitionStatus(
-        req.user!.id,
+        req._user!.id,
         req.params.id,
         req.body,
       );
@@ -104,7 +107,7 @@ export const TicketController = {
   ): Promise<void> => {
     try {
       const ticket = await ticketService.addComment(
-        req.user!.id,
+        req._user!.id,
         req.params.id,
         req.body,
       );
@@ -121,7 +124,7 @@ export const TicketController = {
   ): Promise<void> => {
     try {
       await ticketService.deleteTicket(
-        req.user!.id,
+        req._user!.id,
         req.user!.role,
         req.params.id,
       );
