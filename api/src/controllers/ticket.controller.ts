@@ -20,7 +20,7 @@ export const TicketController = {
   ): Promise<void> => {
     try {
       const ticket = await ticketService.createTicket(
-        req._user!.id,
+        req.user!.id,
         req.params.projectId,
         req.body,
       );
@@ -37,7 +37,7 @@ export const TicketController = {
 ): Promise<void> => {
   try {
     const result = await ticketService.listTickets(
-      req._user!.id,
+      req.user!.id,
       req.params.projectId,
       req.query as unknown as ListTicketsQuery,
     );
@@ -57,7 +57,7 @@ export const TicketController = {
   ): Promise<void> => {
     try {
       const ticket = await ticketService.getTicket(
-        req._user!.id,
+        req.user!.id,
         req.params.id,
       );
       res.status(200).json({ success: true, data: ticket });
@@ -73,7 +73,7 @@ export const TicketController = {
   ): Promise<void> => {
     try {
       const ticket = await ticketService.updateTicket(
-        req._user!.id,
+        req.user!.id,
         req.params.id,
         req.body,
       );
@@ -90,7 +90,7 @@ export const TicketController = {
   ): Promise<void> => {
     try {
       const ticket = await ticketService.transitionStatus(
-        req._user!.id,
+        req.user!.id,
         req.params.id,
         req.body,
       );
@@ -107,7 +107,7 @@ export const TicketController = {
   ): Promise<void> => {
     try {
       const ticket = await ticketService.addComment(
-        req._user!.id,
+        req.user!.id,
         req.params.id,
         req.body,
       );
@@ -124,7 +124,7 @@ export const TicketController = {
   ): Promise<void> => {
     try {
       await ticketService.deleteTicket(
-        req._user!.id,
+        req.user!.id,
         req.user!.role,
         req.params.id,
       );

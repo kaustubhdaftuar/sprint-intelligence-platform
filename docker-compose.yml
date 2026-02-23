@@ -82,25 +82,32 @@ services:
       retries: 3
 
   # AI Service (placeholder - implement in Phase 3)
-  # ai-service:
-  #   build:
-  #     context: ./services/ai-service
-  #     dockerfile: Dockerfile
-  #   container_name: sprint-ai
-  #   restart: unless-stopped
-  #   ports:
-  #     - "5000:5000"
-  #   environment:
-  #     PORT: 5000
-  #     NODE_ENV: development
-  #     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-  #     REDIS_HOST: redis
-  #     REDIS_PORT: 6379
-  #   depends_on:
-  #     - redis
-  #   networks:
-  #     - sprint-network
-
+# AI Service
+  ai-service:
+    build:
+      context: ./services/ai-service
+      dockerfile: Dockerfile
+    container_name: sprint-ai
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      MONGODB_URI: mongodb://admin:devpassword@mongodb:27017/sprint-intelligence?authSource=admin
+      REDIS_URL: redis://redis:6379
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      LOG_LEVEL: debug
+      QUEUE_NAME: ai-jobs
+      CONCURRENCY: 3
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sprint-network
   # Worker Service (placeholder - implement in Phase 4)
   # worker:
   #   build:

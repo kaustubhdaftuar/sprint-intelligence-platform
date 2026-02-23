@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import mongoose from 'mongoose';
 import { createClient } from 'redis';
+import aiRoutes from '@/routes/ai.routes';
 
 import { env } from '@/utils/env';
 import logger from '@/utils/logger';
@@ -39,6 +40,8 @@ export function createApp(
   // Required when running behind nginx ingress in Kubernetes.
   // Without this, req.ip returns the proxy IP, breaking rate limiting.
   app.set('trust proxy', 1);
+
+
 
   // ─── Security ───────────────────────────────────────────────────────────────
   app.use(helmet());
@@ -188,6 +191,7 @@ export function createApp(
 
   app.use(`${api}/auth`, authRoutes);
   app.use(`${api}/projects`, projectRoutes);
+  app.use(`${api}/ai`, aiRoutes);
 
   // Sprint and ticket routes are nested under /projects/:projectId
   // mergeParams: true on those routers makes :projectId available downstream

@@ -89,7 +89,7 @@ class AuthController {
          * GET /api/auth/me
          */
         this.getProfile = (0, errorHandler_1.asyncHandler)(async (req, res) => {
-            const user = await this.authService.getProfile(req._user.id);
+            const user = await this.authService.getProfile(req.user.id);
             res.status(200).json({
                 success: true,
                 data: { user },
@@ -112,7 +112,7 @@ class AuthController {
                 });
                 return;
             }
-            const user = await this.authService.updateProfile(req._user.id, value);
+            const user = await this.authService.updateProfile(req.user.id, value);
             res.status(200).json({
                 success: true,
                 message: 'Profile updated successfully',
@@ -136,7 +136,7 @@ class AuthController {
                 });
                 return;
             }
-            await this.authService.changePassword(req._user.id, value.currentPassword, value.newPassword);
+            await this.authService.changePassword(req.user.id, value.currentPassword, value.newPassword);
             res.status(200).json({
                 success: true,
                 message: 'Password changed successfully',

@@ -1,5 +1,18 @@
 {
+  "name": "sprint-api",
+  "version": "1.0.0",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc && tsc-alias",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "module-alias": "^2.3.4"
+  },
   "devDependencies": {
     "tsc-alias": "^1.8.16"
+  },
+  "_moduleAliases": {
+    "@": "dist"
   }
 }

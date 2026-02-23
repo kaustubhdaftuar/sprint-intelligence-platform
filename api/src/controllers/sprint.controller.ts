@@ -20,7 +20,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.createSprint(
-        req._user!.id,
+        req.user!.id,
         req.user!.role,
         req.params.projectId,
         req.body,
@@ -38,7 +38,7 @@ export const SprintController = {
 ): Promise<void> => {
   try {
     const result = await sprintService.listSprints(
-      req._user!.id,
+      req.user!.id,
       req.params.projectId,
       req.query as unknown as ListSprintsQuery, // ← cast here instead
     );
@@ -57,7 +57,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.getSprint(
-        req._user!.id,
+        req.user!.id,
         req.params.sprintId,
       );
       res.status(200).json({ success: true, data: sprint });
@@ -73,7 +73,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.updateSprint(
-        req._user!.id,
+        req.user!.id,
         req.user!.role,
         req.params.sprintId,
         req.body,
@@ -91,7 +91,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.startSprint(
-        req._user!.id,
+        req.user!.id,
         req.user!.role,
         req.params.sprintId,
       );
@@ -108,7 +108,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.completeSprint(
-        req._user!.id,
+        req.user!.id,
         req.user!.role,
         req.params.sprintId,
       );
@@ -125,7 +125,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.assignTickets(
-        req._user!.id,
+        req.user!.id,
         req.params.sprintId,
         req.body,
       );
@@ -142,7 +142,7 @@ export const SprintController = {
   ): Promise<void> => {
     try {
       const sprint = await sprintService.removeTicketFromSprint(
-        req._user!.id,
+        req.user!.id,
         req.params.sprintId,
         req.params.ticketId,
       );

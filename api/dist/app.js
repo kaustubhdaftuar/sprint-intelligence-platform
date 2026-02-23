@@ -11,6 +11,7 @@ const compression_1 = __importDefault(require("compression"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const crypto_1 = require("crypto");
 const mongoose_1 = __importDefault(require("mongoose"));
+const ai_routes_1 = __importDefault(require("./routes/ai.routes"));
 const env_1 = require("./utils/env");
 const logger_1 = __importDefault(require("./utils/logger"));
 const errorHandler_1 = require("./middleware/errorHandler");
@@ -169,6 +170,7 @@ function createApp(redisClient) {
     const api = env_1.env.API_PREFIX; // '/api/v1'
     app.use(`${api}/auth`, auth_routes_1.default);
     app.use(`${api}/projects`, project_routes_1.default);
+    app.use(`${api}/ai`, ai_routes_1.default);
     // Sprint and ticket routes are nested under /projects/:projectId
     // mergeParams: true on those routers makes :projectId available downstream
     app.use(`${api}/projects/:projectId/sprints`, sprint_routes_1.default);

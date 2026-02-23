@@ -46,7 +46,7 @@ export interface AuthenticatedUser {
 declare global {
   namespace Express {
     interface Request {
-      _user?: AuthenticatedUser;
+      user?: AuthenticatedUser;
       correlationId?: string;
     }
   }

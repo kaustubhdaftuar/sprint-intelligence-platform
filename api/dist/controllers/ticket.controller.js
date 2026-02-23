@@ -9,7 +9,7 @@ const ticket_service_1 = require("../services/ticket.service");
 exports.TicketController = {
     create: async (req, res, next) => {
         try {
-            const ticket = await ticket_service_1.ticketService.createTicket(req._user.id, req.params.projectId, req.body);
+            const ticket = await ticket_service_1.ticketService.createTicket(req.user.id, req.params.projectId, req.body);
             res.status(201).json({ success: true, data: ticket });
         }
         catch (err) {
@@ -18,7 +18,7 @@ exports.TicketController = {
     },
     list: async (req, res, next) => {
         try {
-            const result = await ticket_service_1.ticketService.listTickets(req._user.id, req.params.projectId, req.query);
+            const result = await ticket_service_1.ticketService.listTickets(req.user.id, req.params.projectId, req.query);
             res.status(200).json({ success: true, data: result });
         }
         catch (err) {
@@ -27,7 +27,7 @@ exports.TicketController = {
     },
     getById: async (req, res, next) => {
         try {
-            const ticket = await ticket_service_1.ticketService.getTicket(req._user.id, req.params.id);
+            const ticket = await ticket_service_1.ticketService.getTicket(req.user.id, req.params.id);
             res.status(200).json({ success: true, data: ticket });
         }
         catch (err) {
@@ -36,7 +36,7 @@ exports.TicketController = {
     },
     update: async (req, res, next) => {
         try {
-            const ticket = await ticket_service_1.ticketService.updateTicket(req._user.id, req.params.id, req.body);
+            const ticket = await ticket_service_1.ticketService.updateTicket(req.user.id, req.params.id, req.body);
             res.status(200).json({ success: true, data: ticket });
         }
         catch (err) {
@@ -45,7 +45,7 @@ exports.TicketController = {
     },
     transitionStatus: async (req, res, next) => {
         try {
-            const ticket = await ticket_service_1.ticketService.transitionStatus(req._user.id, req.params.id, req.body);
+            const ticket = await ticket_service_1.ticketService.transitionStatus(req.user.id, req.params.id, req.body);
             res.status(200).json({ success: true, data: ticket });
         }
         catch (err) {
@@ -54,7 +54,7 @@ exports.TicketController = {
     },
     addComment: async (req, res, next) => {
         try {
-            const ticket = await ticket_service_1.ticketService.addComment(req._user.id, req.params.id, req.body);
+            const ticket = await ticket_service_1.ticketService.addComment(req.user.id, req.params.id, req.body);
             res.status(201).json({ success: true, data: ticket });
         }
         catch (err) {
@@ -63,7 +63,7 @@ exports.TicketController = {
     },
     delete: async (req, res, next) => {
         try {
-            await ticket_service_1.ticketService.deleteTicket(req._user.id, req.user.role, req.params.id);
+            await ticket_service_1.ticketService.deleteTicket(req.user.id, req.user.role, req.params.id);
             res.status(204).send();
         }
         catch (err) {

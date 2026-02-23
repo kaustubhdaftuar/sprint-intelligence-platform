@@ -1,10 +1,9 @@
 import 'dotenv/config';
 
 import mongoose from 'mongoose';
-import { env } from '@/utils/env';
-import logger from '@/utils/logger';
-
-//import { startWorker } from '@/workers/ai-worker';
+import { env } from './utils/env';
+import logger from './utils/logger';
+import { startWorker } from './workers/ai-worker';
 
 async function startServer() {
   try {
@@ -13,15 +12,20 @@ async function startServer() {
     logger.info('MongoDB connected');
 
     // Start worker
-    //await startWorker();
+    await startWorker();
     
-    logger.info('AI Service running');
+    logger.info({ port: env.PORT }, 'AI Service running');
   } catch (error) {
     logger.error({ error }, 'Failed to start AI service');
     process.exit(1);
   }
-}
 
-console.log("ENV MONGO:", process.env.MONGODB_URI);
+  // Graceful shutdown
+  process.on('SIGTERM', async () => {
+    logger.info('SIGTERM received, closing connections');
+    await mongoose.connection.close();
+    process.exit(0);
+  });
+}
 
 startServer();

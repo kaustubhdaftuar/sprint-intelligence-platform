@@ -122,7 +122,7 @@ export class LLMClient {
     logger.debug({ provider: 'groq' }, 'Calling Groq API');
     
     const response = await this.groq.chat.completions.create({
-      model: 'llama-3.1-70b-versatile',
+      model: 'llama3-8b-8192',
       messages: [
         {
           role: 'user',

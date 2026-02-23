@@ -4,11 +4,11 @@ import { User } from '../models/user.model';
 import logger from '../utils/logger';
 import type { UserRole, JwtAccessPayload, AuthenticatedUser } from '@/types/auth.types';
 
-// Extend Express Request to include user
+// Extend Express Request to include user (internal app format)
 declare global {
   namespace Express {
     interface Request {
-      user?: JwtAccessPayload;
+      user?: AuthenticatedUser;
     }
   }
 }
@@ -32,8 +32,7 @@ export const authenticate = async (
       return;
     }
 
-    // Use verifyAccessToken (not verifyToken if you want strictness)
-    const payload = JWTUtils.verifyAccessToken(token);
+    const payload: JwtAccessPayload = JWTUtils.verifyAccessToken(token);
 
     // payload.sub is userId
     const user = await User.findById(payload.sub).select('isActive');
@@ -46,7 +45,12 @@ export const authenticate = async (
       return;
     }
 
-    req.user = payload;
+    // 🔥 Translate JWT payload → internal app user shape
+    req.user = {
+      id: payload.sub,
+      role: payload.role,
+    };
+
     next();
   } catch (error) {
     const err = error as Error;
@@ -76,7 +80,7 @@ export const authorize = (...allowedRoles: UserRole[]) => {
     if (!allowedRoles.includes(req.user.role)) {
       logger.warn(
         {
-          userId: req.user.sub,
+          userId: req.user.id,
           role: req.user.role,
         },
         'Unauthorized access attempt'
@@ -105,8 +109,12 @@ export const optionalAuthenticate = async (
     const token = JWTUtils.extractTokenFromHeader(req.headers.authorization);
 
     if (token) {
-      const payload = JWTUtils.verifyAccessToken(token);
-      req.user = payload;
+      const payload: JwtAccessPayload = JWTUtils.verifyAccessToken(token);
+
+      req.user = {
+        id: payload.sub,
+        role: payload.role,
+      };
     }
 
     next();
