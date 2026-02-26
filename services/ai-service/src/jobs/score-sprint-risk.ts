@@ -80,14 +80,23 @@ Consider:
   logger.debug({ sprintId: input.sprintId }, 'Calling LLM for risk analysis');
   const llmResponse = await llmClient.complete(prompt);
 
-  // 6. Parse and validate response
-  let parsedResponse;
-  try {
-    parsedResponse = JSON.parse(llmResponse);
-  } catch (error) {
-    logger.error({ llmResponse }, 'Failed to parse LLM response as JSON');
-    throw new Error('LLM returned invalid JSON');
+  function extractJson(text: string): string {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) {
+    throw new Error('No JSON object found in LLM response');
   }
+  return match[0];
+}
+
+  // 6. Parse and validate response
+ let parsedResponse;
+try {
+  const cleaned = extractJson(llmResponse);
+  parsedResponse = JSON.parse(cleaned);
+} catch (error) {
+  logger.error({ llmResponse }, 'Failed to parse LLM response as JSON');
+  throw new Error('LLM returned invalid JSON');
+}
 
   const validatedResponse = validateRiskScoreResponse(parsedResponse);
 

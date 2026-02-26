@@ -96,6 +96,7 @@ services:
       PORT: 5000
       MONGODB_URI: mongodb://admin:devpassword@mongodb:27017/sprint-intelligence?authSource=admin
       REDIS_URL: redis://redis:6379
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       LOG_LEVEL: debug

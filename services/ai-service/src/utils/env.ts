@@ -1,9 +1,5 @@
 import { z } from 'zod';
 
-/**
- * AI Service environment configuration.
- * Validates all required environment variables at startup.
- */
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   
@@ -20,9 +16,9 @@ const EnvSchema = z.object({
     .startsWith('redis', 'REDIS_URL must be a valid Redis connection string'),
   
   // AI Provider API Keys
-  ANTHROPIC_API_KEY: z.string().min(1, 'ANTHROPIC_API_KEY is required'),
-  GROQ_API_KEY: z.string().optional(), // Optional - fallback provider
-  OPENAI_API_KEY: z.string().optional(), // Optional - fallback provider
+  GEMINI_API_KEY: z.string().min(1, 'GEMINI_API_KEY is required'),
+  ANTHROPIC_API_KEY: z.string().optional(), // Optional - fallback
+  GROQ_API_KEY: z.string().optional(),      // Optional - fallback
   
   // Logging
   LOG_LEVEL: z
