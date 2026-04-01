@@ -5,7 +5,8 @@
 # Dependencies & build output (keep lockfiles; do not commit node_modules or dist)
 node_modules/
 **/node_modules/
-api/dist/
-services/ai-service/dist/
-services/frontend/dist/
+dist/
+**/dist/
+coverage/
+**/coverage/
 

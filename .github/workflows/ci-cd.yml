@@ -10,8 +10,6 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME_API: ${{ github.repository }}/api-service
   IMAGE_NAME_AI: ${{ github.repository }}/ai-service
-  IMAGE_NAME_WORKER: ${{ github.repository }}/worker-service
-  IMAGE_NAME_FRONTEND: ${{ github.repository }}/frontend
 
 jobs:
   # Test API Service
@@ -26,22 +24,22 @@ jobs:
         with:
           node-version: '18'
           cache: 'npm'
-          cache-dependency-path: services/api/package-lock.json
+          cache-dependency-path: api/package-lock.json
 
       - name: Install dependencies
-        working-directory: services/api
+        working-directory: api
         run: npm ci
 
       - name: Run linter
-        working-directory: services/api
-        run: npm run lint || true
+        working-directory: api
+        run: npm run lint
 
       - name: Run tests
-        working-directory: services/api
-        run: npm test || true
+        working-directory: api
+        run: npm test
 
       - name: Build TypeScript
-        working-directory: services/api
+        working-directory: api
         run: npm run build
 
   # Test AI Service
@@ -62,9 +60,15 @@ jobs:
         working-directory: services/ai-service
         run: npm ci
 
-      - name: Run tests
+      - name: Run tests when a suite exists
         working-directory: services/ai-service
-        run: npm test || true
+        shell: bash
+        run: |
+          if find . \( -path '*/__tests__/*' -o -name '*.test.*' -o -name '*.spec.*' \) | grep -q .; then
+            npm test
+          else
+            echo "No AI service tests found; skipping test step."
+          fi
 
       - name: Build
         working-directory: services/ai-service
@@ -80,7 +84,11 @@ jobs:
       packages: write
     strategy:
       matrix:
-        service: [api, ai-service, worker-service, frontend]
+        include:
+          - service: api-service
+            context: ./api
+          - service: ai-service
+            context: ./services/ai-service
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -106,7 +114,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./services/${{ matrix.service }}
+          context: ${{ matrix.context }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -140,16 +148,12 @@ jobs:
           
           # Update AI service image
           sed -i "s|image:.*ai-service.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_AI }}:${{ github.sha }}|g" k8s/ai-deployment.yaml
-          
-          # Update Worker service image
-          sed -i "s|image:.*worker-service.*|image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_WORKER }}:${{ github.sha }}|g" k8s/worker-deployment.yaml
 
       - name: Deploy to Kubernetes
         run: |
           kubectl apply -f k8s/
           kubectl rollout status deployment/api-service -n default --timeout=5m
           kubectl rollout status deployment/ai-service -n default --timeout=5m
-          kubectl rollout status deployment/worker-service -n default --timeout=5m
 
       - name: Verify deployment
         run: |
