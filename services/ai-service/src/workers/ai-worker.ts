@@ -1,18 +1,20 @@
-import { Worker, Job } from 'bullmq';
-import { createClient } from 'redis';
+import { Worker, Job, Queue } from 'bullmq';
 import { env } from '../utils/env';
 import logger from '../utils/logger';
 import { scoreSprintRisk, ScoreSprintRiskInput } from '../jobs/score-sprint-risk';
+import { detectBlockers, DetectBlockersPayload } from '../jobs/detect-blockers';
+import {
+  generateSprintSummary,
+  GenerateSprintSummaryPayload,
+} from '../jobs/generate-sprint-summary';
 
 /**
  * AI Worker - Processes AI jobs from Redis queue.
- * 
+ *
  * Job types:
  * - score-sprint-risk
  * - detect-blockers
- * - generate-sprint-plan
- * - suggest-priorities
- * - generate-summary
+ * - generate-sprint-summary
  */
 
 interface AIJobData {
@@ -21,18 +23,16 @@ interface AIJobData {
   correlationId?: string;
 }
 
-export async function startWorker() {
-  // Connect to Redis
-  const redisClient = createClient({ url: env.REDIS_URL });
-  
-  redisClient.on('error', (err) => {
-    logger.error({ err }, 'Redis client error');
-  });
-  
-  await redisClient.connect();
-  logger.info('Redis connected for worker');
+const connection = {
+  host: new URL(env.REDIS_URL).hostname,
+  port: parseInt(new URL(env.REDIS_URL).port || '6379', 10),
+};
 
-  // Create BullMQ worker
+export async function startWorker(): Promise<{
+  shutdown: () => Promise<void>;
+}> {
+  const queue = new Queue<AIJobData>(env.QUEUE_NAME, { connection });
+
   const worker = new Worker<AIJobData>(
     env.QUEUE_NAME,
     async (job: Job<AIJobData>) => {
@@ -42,22 +42,21 @@ export async function startWorker() {
           jobType: job.data.type,
           correlationId: job.data.correlationId,
         },
-        'Processing AI job'
+        'Processing AI job',
       );
 
       try {
-        // Route to appropriate handler
         const result = await processJob(job.data);
-        
+
         logger.info(
           {
             jobId: job.id,
             jobType: job.data.type,
             correlationId: job.data.correlationId,
           },
-          'Job completed successfully'
+          'Job completed successfully',
         );
-        
+
         return result;
       } catch (error) {
         logger.error(
@@ -67,23 +66,19 @@ export async function startWorker() {
             error: (error as Error).message,
             correlationId: job.data.correlationId,
           },
-          'Job failed'
+          'Job failed',
         );
         throw error;
       }
     },
     {
-      connection: {
-        host: new URL(env.REDIS_URL).hostname,
-        port: parseInt(new URL(env.REDIS_URL).port || '6379'),
-      },
+      connection,
       concurrency: env.CONCURRENCY,
-      removeOnComplete: { count: 100 }, // Keep last 100 completed jobs
-      removeOnFail: { count: 500 },     // Keep last 500 failed jobs
-    }
+      removeOnComplete: { count: 100 },
+      removeOnFail: { count: 500 },
+    },
   );
 
-  // Worker event handlers
   worker.on('completed', (job) => {
     logger.debug({ jobId: job.id }, 'Job completed event');
   });
@@ -94,7 +89,7 @@ export async function startWorker() {
         jobId: job?.id,
         error: err.message,
       },
-      'Job failed event'
+      'Job failed event',
     );
   });
 
@@ -102,41 +97,49 @@ export async function startWorker() {
     logger.error({ err }, 'Worker error');
   });
 
+  const metricsInterval = setInterval(() => {
+    void (async () => {
+      try {
+        await queue.clean(24 * 60 * 60 * 1000, 100, 'completed');
+        await queue.clean(7 * 24 * 60 * 60 * 1000, 500, 'failed');
+        const counts = await queue.getJobCounts();
+        logger.info({ queueMetrics: counts }, 'Queue status');
+      } catch (err) {
+        logger.error({ err }, 'Queue clean/metrics failed');
+      }
+    })();
+  }, 60_000);
+
+  const shutdown = async (): Promise<void> => {
+    clearInterval(metricsInterval);
+    await worker.close();
+    await queue.close();
+  };
+
   logger.info(
     {
       queueName: env.QUEUE_NAME,
       concurrency: env.CONCURRENCY,
     },
-    'AI worker started'
+    'AI worker started',
   );
 
-  return worker;
+  return { shutdown };
 }
 
-/**
- * Route job to appropriate handler based on type.
- */
 async function processJob(data: AIJobData): Promise<unknown> {
   switch (data.type) {
     case 'score-sprint-risk':
       return await scoreSprintRisk(data.payload as ScoreSprintRiskInput);
-    
+
     case 'detect-blockers':
-      logger.info('detect-blockers job received (not implemented yet)');
-      return { message: 'Job type not implemented yet' };
-    
-    case 'generate-sprint-plan':
-      logger.info('generate-sprint-plan job received (not implemented yet)');
-      return { message: 'Job type not implemented yet' };
-    
-    case 'suggest-priorities':
-      logger.info('suggest-priorities job received (not implemented yet)');
-      return { message: 'Job type not implemented yet' };
-    
-    case 'generate-summary':
-      logger.info('generate-summary job received (not implemented yet)');
-      return { message: 'Job type not implemented yet' };
-    
+      return await detectBlockers(data.payload as DetectBlockersPayload);
+
+    case 'generate-sprint-summary':
+      return await generateSprintSummary(
+        data.payload as GenerateSprintSummaryPayload,
+      );
+
     default:
       throw new Error(`Unknown job type: ${data.type}`);
   }

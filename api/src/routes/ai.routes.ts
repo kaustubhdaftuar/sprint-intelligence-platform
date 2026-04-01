@@ -24,6 +24,22 @@ router.post(
   AIController.scoreSprintRisk
 );
 
+// POST /ai/detect-blockers
+router.post(
+  '/detect-blockers',
+  authenticate,
+  validateBody(ScoreSprintRiskSchema),
+  AIController.detectBlockers
+);
+
+// POST /ai/generate-sprint-summary
+router.post(
+  '/generate-sprint-summary',
+  authenticate,
+  validateBody(ScoreSprintRiskSchema),
+  AIController.generateSprintSummary
+);
+
 // GET /ai/jobs/:jobId
 router.get(
   '/jobs/:jobId',

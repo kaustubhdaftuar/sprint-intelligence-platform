@@ -12,11 +12,18 @@ import { env } from '@/utils/env';
 const redisClient = createClient({ url: env.REDIS_URL });
 redisClient.connect().catch(console.error);
 
-// Create BullMQ queue
+// Create BullMQ queue (retries: exponential backoff per Phase 3 roadmap)
 const aiQueue = new Queue('ai-jobs', {
   connection: {
     host: new URL(env.REDIS_URL).hostname,
     port: parseInt(new URL(env.REDIS_URL).port || '6379'),
+  },
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 5000,
+    },
   },
 });
 
@@ -86,6 +93,66 @@ export const AIController = {
           status: state,
           result: result || null,
           error: failedReason || null,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * POST /api/v1/ai/detect-blockers
+   */
+  detectBlockers: async (
+    req: Request<{}, {}, { sprintId: string }>,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const { sprintId } = req.body;
+
+      const job = await aiQueue.add('detect-blockers', {
+        type: 'detect-blockers',
+        payload: { sprintId },
+        correlationId: req.correlationId,
+      });
+
+      res.status(202).json({
+        success: true,
+        data: {
+          jobId: job.id,
+          status: 'queued',
+          message: 'Blocker detection job queued',
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * POST /api/v1/ai/generate-sprint-summary
+   */
+  generateSprintSummary: async (
+    req: Request<{}, {}, { sprintId: string }>,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> => {
+    try {
+      const { sprintId } = req.body;
+
+      const job = await aiQueue.add('generate-sprint-summary', {
+        type: 'generate-sprint-summary',
+        payload: { sprintId },
+        correlationId: req.correlationId,
+      });
+
+      res.status(202).json({
+        success: true,
+        data: {
+          jobId: job.id,
+          status: 'queued',
+          message: 'Sprint summary job queued',
         },
       });
     } catch (err) {
